@@ -14,9 +14,9 @@ import java.sql.Statement;
 //import java.sql.ResultSetMetaData;
 
 /**
- * Author: Eric Moriyasu ICS 421 Assignment 1 
+ * Author: Eric Moriyasu ICS 421 Assignment 2
  * 
- * reads from clustercfg and ddlfile to run a multi threaded ddl queries
+ * reads from clustercfg and sqlfile to run a multi threaded sql queries
  * 
  * Jan. 23 2017
  */
@@ -52,7 +52,7 @@ public class Main {
 	public static void main(String[] args) throws InterruptedException {
 
 		String clustercfg = "";
-		String ddlfile = "";
+		String sqlfile = "";
 		String line = null;
 		String wordLeft = ""; // left side of catalog eqs
 		String wordRight = ""; // right side of catalog eqs
@@ -80,7 +80,7 @@ public class Main {
 
 		if (args.length > 1) {
 			clustercfg = args[0];
-			ddlfile = args[1];
+			sqlfile = args[1];
 
 			try {
 				fr = new FileReader(clustercfg);
@@ -156,22 +156,13 @@ public class Main {
 				} // end of while
 
 				// String tname = "";
-
-				readDDL(ddlfile);
-
-				/*
-				 * String derp =
-				 * "CREATE TABLE BOOKS(isbn char(14), title char(80), price decimal)"
-				 * ;
-				 * 
-				 * System.out.println(derp); System.out.print("herr drr: ");
-				 * System.out.println(parseTname(derp));
-				 */
+				readCatalog();
+				readSQL(sqlfile);
 
 				doThread();
 
 				if (successful) {
-					runCatalog();
+					//updateMetaData();
 				}
 
 			} catch (IOException e) {
@@ -261,48 +252,6 @@ public class Main {
 
 		return (ret);
 	}
-
-	
-	/*
-	 This function is currently not in use	
-	*/
-	private static void processNodeLine(String line, int node) {
-
-		String wordLeft = ""; // left side of catalog eqs
-
-		/*
-		 * switch for scanning catalogs. -1 = nothing 0 = driver, 1=hostname,
-		 * 2=username, 3=passwd
-		 *
-		 */
-		int catalog = -1;
-
-		for (int x = 0; x < line.length(); x++) {
-			// System.out.print(line.charAt(x));
-			// catalog = compare(wordLeft);
-
-			if (catalog == -1) {
-				wordLeft = wordLeft + line.charAt(x);
-				catalog = catalogCompare(wordLeft);
-			} else if (catalog == 0) {
-				catalogDriver = catalogDriver + line.charAt(x);
-			} else if (catalog == 1) {
-				catalogHostName = catalogHostName + line.charAt(x);
-			} else if (catalog == 2) {
-				catalogUserName = catalogUserName + line.charAt(x);
-			} else if (catalog == 3) {
-				catalogPassword = catalogPassword + line.charAt(x);
-			} else if (catalog == 4) {
-				// numnodes = (int) line.substring(x);
-
-				numnodes = Integer.parseInt(line.substring(x));
-
-			}
-
-		}
-
-	}
-
 	
 	/* Function readDDL
 	 * Parameter: (String) ddl : filename of the ddlfile
@@ -314,7 +263,7 @@ public class Main {
 	 * Returns: void
 	*/
 	// private static void readDDL(String ddl, ArrayList<String> arrayList) {
-	private static void readDDL(String ddl) {
+	private static void readSQL(String sql) {
 		String line = "";
 		int c;
 		char ch;
@@ -322,7 +271,7 @@ public class Main {
 		BufferedReader br;
 
 		try {
-			fr = new FileReader(ddl);
+			fr = new FileReader(sql);
 			br = new BufferedReader(fr);
 
 			while ((c = br.read()) != -1) {
@@ -357,7 +306,7 @@ public class Main {
 	 * 
 	 * Returns: void
 	*/
-	private static void runDDL(String JDBC_DRIVER, String DB_URL, String USER, String PASS, String sql) {
+	private static void runSQL(String JDBC_DRIVER, String DB_URL, String USER, String PASS, String sql) {
 
 		Connection conn = null;
 		Statement stmt = null;
@@ -374,18 +323,15 @@ public class Main {
 			} else {
 				conn = DriverManager.getConnection(DB_URL, USER, PASS);
 			}
-
-			// conn = DriverManager.getConnection(DB_URL, USER, PASS);
-			// conn = DriverManager.getConnection(DB_URL);
-
+			
 			// STEP 4: Execute a query
 			System.out.println("Creating statement...");
 			stmt = conn.createStatement();
 
-			// ResultSet rs = null;
-			stmt.executeUpdate(sql);
-			// stmt.executeQuery(sql);
-
+			ResultSet rs = null;
+			//stmt.executeUpdate(sql); //for ddl commands
+			stmt.executeQuery(sql); //for insert and what not
+			
 			// STEP 5: Extract data from result set
 
 			/*
@@ -429,6 +375,131 @@ public class Main {
 	}
 
 	
+	/* Function readCatalog
+	 * Parameter: none
+	 * 
+	 * Description: attempts to establish a database connection to the catalog DB
+	 * 				and get node data from Catalog. It will then insert data into
+	 * 				nodeAL ArrayList
+	 * 
+	 * Returns: void
+	*/
+	private static void readCatalog() {
+		// runDDL(String JDBC_DRIVER, String DB_URL, String USER, String PASS,
+		// String sql)
+
+		//System.out.println(sqlAL.get(0));
+
+		/*
+		 * static String catalogDriver = ""; static String catalogHostName = "";
+		 * static String catalogUserName = ""; static String catalogPassword =
+		 * "";
+		 */
+		Connection conn = null;
+		Statement stmt = null;
+		String sql = "";
+		
+		//SELECT * FROM dtables WHERE tname ='' ORDER BY nodeid 
+		
+		String tname = "";
+		String cmd = "";
+		
+		String nodeDriver = "";
+		String nodeHostName = "";
+		String nodeUserName = "";
+		String nodePassword = "";
+		
+		if(numnodes == -1) {
+			numnodes = 0;
+		}
+		
+
+		try {
+			// STEP 2: Register JDBC driver
+			Class.forName(catalogDriver);
+
+			// STEP 3: Open a connection
+			conn = DriverManager.getConnection(catalogHostName);
+			
+			// STEP 4: Execute a query
+			stmt = conn.createStatement();
+
+			
+			sql = "SELECT * FROM dtables" ;
+			System.out.println(sql);
+			
+			// STEP 5: Extract data from result set
+			ResultSet rs = stmt.executeQuery(sql);
+			
+			System.out.println("Query executed");
+			
+			// STEP 5: Extract data from result set
+			while (rs.next()) {
+				
+				// Retrieve by column name
+				/*
+				nodeDriver = rs.getString("nodedriver");
+				nodeHostName = rs.getString("nodeurl");
+				nodeUserName = rs.getString("nodeuser");
+				nodePassword = rs.getString("nodepasswd");
+				*/
+				nodeDriver = "org.apache.derby.jdbc.EmbeddedDriver";
+				nodeHostName = "jdbc:derby://localhost:1527/seconddb;";
+				nodeUserName = " ";
+				nodePassword = " ";
+				
+				
+				// Display values
+				System.out.print("Driver: " + nodeDriver);
+				System.out.print(", URL: " + nodeHostName);
+				System.out.print(", User: " + nodeUserName);
+				System.out.println(", Pass: " + nodePassword);
+				//System.out.print(", First: " + first);
+				//System.out.println(", Last: " + last);
+				
+				DBNode newNode = new DBNode(nodeDriver, nodeHostName, nodeUserName, nodePassword);
+				numnodes++;
+
+				nodeAL.add(newNode);
+				
+			}
+			// STEP 6: Clean-up environment
+			 
+			 // Display values //System.out.print("ID: " + id);
+			 //System.out.println(", name: " + name); }
+
+			rs.close();
+			stmt.close();
+			conn.close();
+			//System.out.println("[" + catalogHostName.substring(0, (catalogHostName.length() - 1)) + "]: Catalog Updated");
+		} catch (SQLException se) {
+			// Handle errors for JDBC
+			// se.printStackTrace();
+			System.out.println(
+					"[" + catalogHostName.substring(0, (catalogHostName.length() - 1)) + "]: catalog read failed");
+		} catch (Exception e) {
+			// Handle errors for Class.forName
+			// e.printStackTrace();
+			System.out.println(
+					"[" + catalogHostName.substring(0, (catalogHostName.length() - 1)) + "]: catalog read failed");
+		} finally {
+			// finally block used to close resources
+			try {
+				if (stmt != null)
+					stmt.close();
+			} catch (SQLException se2) {
+			} // nothing we can do
+			try {
+				if (conn != null)
+					conn.close();
+			} catch (SQLException se) {
+				se.printStackTrace();
+			} // end finally try
+		} // end try
+			// System.out.println("Goodbye!");
+
+	}
+	
 	/* Function runCatalog
 	 * Parameter: none
 	 * 
@@ -438,7 +509,7 @@ public class Main {
 	 * 
 	 * Returns: void
 	*/
-	private static void runCatalog() {
+	private static void updateMetaData() {
 		// runDDL(String JDBC_DRIVER, String DB_URL, String USER, String PASS,
 		// String sql)
 
@@ -716,7 +787,7 @@ public class Main {
 					Thread.sleep(4000);
 					// Print a message
 					threadMessage(sqlAL.get(i));
-					runDDL(JDBC_DRIVER, DB_URL, USER, PASS, sqlAL.get(i));
+					runSQL(JDBC_DRIVER, DB_URL, USER, PASS, sqlAL.get(i));
 
 				}
 			} catch (InterruptedException e) {
