@@ -1,4 +1,0 @@
-catalog.driver=com.mysql.jdbc.Driver
-catalog.hostname=jdbc:mysql://localhost:3306/catalog
-catalog.username=root
-catalog.passwd=1500500ehddnr
