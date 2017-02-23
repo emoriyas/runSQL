@@ -9,6 +9,7 @@ import java.lang.String;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 //import java.sql.ResultSetMetaData;
@@ -57,22 +58,6 @@ public class Main {
 		String wordLeft = ""; // left side of catalog eqs
 		String wordRight = ""; // right side of catalog eqs
 
-		// ArrayList to store the node information
-		// ArrayList<DBNode> nodeAL = new ArrayList<DBNode>();
-		int nodeCount = 1; // for use in getting values for nodes
-		int temp = 0;
-
-		String nodeDriver = "";
-		String nodeHostName = "";
-		String nodeUserName = "";
-		String nodePassword = "";
-
-		/*
-		 * switch for scanning catalogs. -1 = nothing 0 = driver, 1=hostname,
-		 * 2=username, 3=passwd
-		 *
-		 */
-
 		FileReader fr;
 		BufferedReader br;
 
@@ -87,83 +72,16 @@ public class Main {
 				br = new BufferedReader(fr);
 
 				while ((line = br.readLine()) != null) {
-					// System.out.println(line);
+					System.out.println(line);
 
-					if (numnodes == -1) {
-						processCatalogLine(line);
-					} else {
-
-						// System.out.println(line);
-
-						for (int x = 0; x < line.length(); x++) {
-							// System.out.println(wordLeft);
-							// System.out.println(temp);
-							// System.out.println("node" + nodeCount +
-							// "driver=");
-
-							if (wordLeft.equals("node" + nodeCount + ".driver=")) {
-								nodeDriver = nodeDriver + line.charAt(x);
-
-								if (x == (line.length() - 1)) {
-									temp++;
-								}
-
-							} else if (wordLeft.equals("node" + nodeCount + ".hostname=")) {
-								nodeHostName = nodeHostName + line.charAt(x);
-
-								if (x == (line.length() - 1)) {
-									temp++;
-								}
-
-							} else if (wordLeft.equals("node" + nodeCount + ".username=")) {
-								nodeUserName = nodeUserName + line.charAt(x);
-
-								if (x == (line.length() - 1)) {
-									temp++;
-								}
-
-							} else if (wordLeft.equals("node" + nodeCount + ".passwd=")) {
-								nodePassword = nodePassword + line.charAt(x);
-
-								if (x == (line.length() - 1)) {
-									temp++;
-								}
-							} else {
-								wordLeft = wordLeft + line.charAt(x);
-							}
-
-						}
-
-					}
-
-					if (temp == 4) {
-
-						DBNode newNode = new DBNode(nodeDriver, nodeHostName, nodeUserName, nodePassword);
-
-						nodeAL.add(newNode);
-
-						nodeDriver = "";
-						nodeHostName = "";
-						nodeUserName = "";
-						nodePassword = "";
-						nodeCount++;
-						temp = 0;
-					}
-
-					// System.out.println(wordLeft);
-					wordLeft = "";
-					// catalog = -1;
+					processCatalogLine(line);
 				} // end of while
-
+				
 				// String tname = "";
-				readCatalog();
+				
 				readSQL(sqlfile);
-
+				readCatalog(parseTname(sqlAL.get(0)));
 				doThread();
-
-				if (successful) {
-					//updateMetaData();
-				}
 
 			} catch (IOException e) {
 				System.out.println("File not found");
@@ -310,6 +228,9 @@ public class Main {
 
 		Connection conn = null;
 		Statement stmt = null;
+		int column = 0;
+		String val = "";
+		
 		try {
 			// STEP 2: Register JDBC driver
 			System.out.println("Loading driver...");
@@ -329,33 +250,57 @@ public class Main {
 			stmt = conn.createStatement();
 
 			ResultSet rs = null;
-			//stmt.executeUpdate(sql); //for ddl commands
-			stmt.executeQuery(sql); //for insert and what not
 			
-			// STEP 5: Extract data from result set
-
-			/*
-			 * while (rs.next()) { // Retrieve by column name //int id =
-			 * rs.getInt("id"); //String name = rs.getString("name");
-			 * 
-			 * // Display values //System.out.print("ID: " + id);
-			 * //System.out.println(", name: " + name); }
-			 */
+			try {
+				rs = stmt.executeQuery(sql);
+			} catch (SQLException se) {
+				stmt.executeUpdate(sql);
+			} finally {
+				
+			}
+			
+			//stmt.executeUpdate(sql); //for ddl commands
+			//stmt.executeQuery(sql); //for insert and what not
+			
+			if (rs != null) {
+				// STEP 5: Extract data from result set
+				ResultSetMetaData rsmd = rs.getMetaData();
+				column = rsmd.getColumnCount();
+				while(rs.next()){
+					
+					/*
+					for (int i = 1; i <= column; i++) {
+						System.out.print(rsmd.getColumnName(i));
+					}
+					*/
+					
+					
+					for (int i = 1; i <= column; i++) {
+						if (i > 1) {
+							System.out.print(", ");
+						}
+						val = rs.getString(i);
+						System.out.print(val);
+					}
+					System.out.println();
+	
+			      }
+				rs.close();
+			}
 
 			System.out.println("[" + DB_URL.substring(0, (DB_URL.length() - 1)) + "]: sql success");
 			successful = true;
 
-			// rs.close();
 			stmt.close();
 			conn.close();
 		} catch (SQLException se) {
 			// Handle errors for JDBC
 			// se.printStackTrace();
-			System.out.println("[" + DB_URL.substring(0, (DB_URL.length() - 1)) + "]: sql failed");
+			System.out.println("[" + DB_URL + "]: sql failed");
 		} catch (Exception e) {
 			// Handle errors for Class.forName
 			// e.printStackTrace();
-			System.out.println("[" + DB_URL.substring(0, (DB_URL.length() - 1)) + "]: sql failed");
+			System.out.println("[" + DB_URL + "]: sql failed");
 		} finally {
 			// finally block used to close resources
 			try {
@@ -384,7 +329,7 @@ public class Main {
 	 * 
 	 * Returns: void
 	*/
-	private static void readCatalog() {
+	private static void readCatalog(String table) {
 		// runDDL(String JDBC_DRIVER, String DB_URL, String USER, String PASS,
 		// String sql)
 
@@ -419,13 +364,18 @@ public class Main {
 			Class.forName(catalogDriver);
 
 			// STEP 3: Open a connection
-			conn = DriverManager.getConnection(catalogHostName);
+			if (catalogUserName.equals(" ") && catalogPassword.equals(" ")) {
+				conn = DriverManager.getConnection(catalogHostName);
+			} else {
+				conn = DriverManager.getConnection(catalogHostName, catalogUserName, catalogPassword);
+			}
 			
 			// STEP 4: Execute a query
 			stmt = conn.createStatement();
 
 			
-			sql = "SELECT * FROM dtables" ;
+			sql = "SELECT * FROM dtables WHERE tname='" + table+ "' ORDER BY nodeid ";
+			//"SELECT * FROM dtables WHERE tname=??? ORDER BY nodeid"
 			System.out.println(sql);
 			
 			// STEP 5: Extract data from result set
@@ -437,25 +387,31 @@ public class Main {
 			while (rs.next()) {
 				
 				// Retrieve by column name
-				/*
+				
 				nodeDriver = rs.getString("nodedriver");
 				nodeHostName = rs.getString("nodeurl");
 				nodeUserName = rs.getString("nodeuser");
 				nodePassword = rs.getString("nodepasswd");
-				*/
-				nodeDriver = "org.apache.derby.jdbc.EmbeddedDriver";
-				nodeHostName = "jdbc:derby://localhost:1527/seconddb;";
-				nodeUserName = " ";
-				nodePassword = " ";
 				
+				nodeDriver = nodeDriver.trim().replaceAll(" +", "");
+				nodeHostName = nodeHostName.trim().replaceAll(" +", "");
+				nodeUserName = nodeUserName.trim().replaceAll(" +", "");
+				nodePassword = nodePassword.trim().replaceAll(" +", "");
+				
+				if(nodeUserName.equals("")) {
+					nodeUserName = " ";
+				}
+				if(nodePassword.equals("")) {
+					nodePassword = " ";
+				}	
 				
 				// Display values
+				/*
 				System.out.print("Driver: " + nodeDriver);
 				System.out.print(", URL: " + nodeHostName);
 				System.out.print(", User: " + nodeUserName);
 				System.out.println(", Pass: " + nodePassword);
-				//System.out.print(", First: " + first);
-				//System.out.println(", Last: " + last);
+				*/
 				
 				DBNode newNode = new DBNode(nodeDriver, nodeHostName, nodeUserName, nodePassword);
 				numnodes++;
@@ -500,146 +456,6 @@ public class Main {
 
 	}
 	
-	/* Function runCatalog
-	 * Parameter: none
-	 * 
-	 * Description: attempts to establish a database connection to the catalog DB
-	 * 				and run update to metadata table. Will close connection after 
-	 * 				update is completed
-	 * 
-	 * Returns: void
-	*/
-	private static void updateMetaData() {
-		// runDDL(String JDBC_DRIVER, String DB_URL, String USER, String PASS,
-		// String sql)
-
-		System.out.println(sqlAL.get(0));
-
-		/*
-		 * static String catalogDriver = ""; static String catalogHostName = "";
-		 * static String catalogUserName = ""; static String catalogPassword =
-		 * "";
-		 */
-		Connection conn = null;
-		Statement stmt = null;
-		String sql = "";
-		boolean tableExist = true;
-		String tname = "";
-		String cmd = "";
-
-		try {
-			// STEP 2: Register JDBC driver
-			Class.forName(catalogDriver);
-
-			// STEP 3: Open a connection
-			conn = DriverManager.getConnection(catalogHostName);
-
-			// STEP 4: Execute a query
-			stmt = conn.createStatement();
-
-			try {
-				// String tname, String JDBC_DRIVER, String DB_URL, String USER,
-				// String PASS, int nodeid
-
-				sql = "SELECT * FROM dtables";
-				stmt.executeQuery(sql);
-
-				System.out.println("Catalog table already exists");
-
-			} catch (SQLException e) {
-
-				tableExist = false;
-
-				System.out.println("Catalog table does not exist");
-			}
-
-			if (tableExist == false) {
-				sql = "CREATE TABLE dtables(tname char(32)," + "nodedriver char(64)," + "nodeurl char(128),"
-						+ "nodeuser char(16)," + "nodepasswd char(16)," + "partmtd int," + "nodeid int,"
-						+ "partcol char(32)," + "partparam1 char(32)," + "partparam2 char(32))";
-
-				stmt.executeUpdate(sql);
-
-				System.out.println("SQL table created");
-			}
-
-			/*
-			 * INSERT INTO SECONDTABLE VALUES (100,'ONE HUNDRED'),(200,'TWO
-			 * HUNDRED'),(300,'THREE HUNDRED');
-			 * 
-			 * (String JDBC_DRIVER, String DB_URL, String USER, String PASS,
-			 * String sql)
-			 */
-
-			for (int x = 0; x < nodeAL.size() - 1; x++) {
-
-				tname = parseTname(sqlAL.get(x));
-
-				cmd = getCmd(sqlAL.get(x));
-				// System.out.println(cmd);
-
-				if (cmd.equals("CREATE")) {
-
-					sql = "INSERT INTO dtables VALUES " + "('" + tname + "', " + "'" + (nodeAL.get(x)).getDriver()
-							+ "', " + "'" + (nodeAL.get(x)).getHostName() + "', " + "'" + (nodeAL.get(x)).getUserName()
-							+ "', " + "'" + (nodeAL.get(x)).getPassword() + "', " + -1 + ", " + "" + x + ", " + null
-							+ ", " + null + ", " + null + ")";
-
-					stmt.executeUpdate(sql);
-				} else if (cmd.equals("DROP")) {
-					sql = "DELETE FROM dtables WHERE " + "tname = '" + tname + "'" + "AND nodedriver = '"
-							+ (nodeAL.get(x)).getDriver() + "' " + "AND nodeurl = '" + (nodeAL.get(x)).getHostName()
-							+ "' " + "AND nodeuser = '" + (nodeAL.get(x)).getUserName() + "' " + "AND nodepasswd = '"
-							+ (nodeAL.get(x)).getPassword() + "' "
-							// + "AND partmtd = " + -1 + "'"
-							+ "AND nodeid = " + x + ""
-							// + "AND partcol = '" + null + "'"
-							// + "AND partparam1 = '" + null + "'"
-							// + "AND partparam2 = '" + null
-							+ "";
-
-					stmt.executeUpdate(sql);
-				}
-
-				// stmt.executeQuery(sql);
-				// stmt.executeUpdate(sql);
-
-			}
-
-			// rs.close();
-			stmt.close();
-			conn.close();
-			System.out
-					.println("[" + catalogHostName.substring(0, (catalogHostName.length() - 1)) + "]: Catalog Updated");
-		} catch (SQLException se) {
-			// Handle errors for JDBC
-			// se.printStackTrace();
-			System.out.println(
-					"[" + catalogHostName.substring(0, (catalogHostName.length() - 1)) + "]: catalog update failed");
-		} catch (Exception e) {
-			// Handle errors for Class.forName
-			// e.printStackTrace();
-			System.out.println(
-					"[" + catalogHostName.substring(0, (catalogHostName.length() - 1)) + "]: catalog update failed");
-		} finally {
-			// finally block used to close resources
-			try {
-				if (stmt != null)
-					stmt.close();
-			} catch (SQLException se2) {
-			} // nothing we can do
-			try {
-				if (conn != null)
-					conn.close();
-			} catch (SQLException se) {
-				se.printStackTrace();
-			} // end finally try
-		} // end try
-			// System.out.println("Goodbye!");
-
-	}
-
-	
 	/* Function parseTname
 	 * Parameter: (String) sql : sql query to extract information from
 	 * 
@@ -665,7 +481,13 @@ public class Main {
 				} else {
 					ret = ret + ch;
 				}
-			} else if (control == 0 && word.equals("TABLE")) {
+			} else if (control == 0 && word.equalsIgnoreCase("TABLE")) {
+				control++;
+			} else if (control == 0 && word.equalsIgnoreCase("FROM")) {
+				control++;
+			} else if (control == 0 && word.equalsIgnoreCase("INTO")) {
+				control++;	
+			} else if (control == 0 && word.equalsIgnoreCase("UPDATE")) {
 				control++;
 			} else if (ch == ' ') {
 				word = "";
@@ -673,7 +495,7 @@ public class Main {
 				word = word + ch;
 			}
 		}
-
+		System.out.println(ret);
 		return (ret);
 	}
 
@@ -729,6 +551,7 @@ public class Main {
 		String pass = null;
 
 		// for (int i = 0; i < nthreads; i++) {
+		//System.out.println(nodeAL.size());
 		for (int i = 0; (i < nthreads) && (i < nodeAL.size()); i++) {
 			driver = (nodeAL.get(i)).getDriver();
 			host = (nodeAL.get(i)).getHostName();
