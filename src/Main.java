@@ -5,6 +5,9 @@
 //import java.io.BufferedReader;
 import java.io.*;
 import java.util.*;
+
+//import loadCSV.CsvReader;
+
 import java.lang.String;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -12,7 +15,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
-//import java.sql.ResultSetMetaData;
+
 
 /**
  * Author: Eric Moriyasu ICS 421 Assignment 2
@@ -25,17 +28,24 @@ import java.sql.Statement;
 
 public class Main {
 
-	// varaibles to hold clustercfg data
-	static String catalogDriver = "";
-	static String catalogHostName = "";
-	static String catalogUserName = "";
-	static String catalogPassword = "";
+	// variables to hold clustercfg data
+	//static String catalogDriver = "";
+	//static String catalogHostName = "";
+	//static String catalogUserName = "";
+	//static String catalogPassword = "";
 	static ArrayList<String> sqlAL = new ArrayList<String>();
-	static ArrayList<DBNode> nodeAL = new ArrayList<DBNode>();
+	static ArrayList<DBNode> nodeAL1 = new ArrayList<DBNode>();
+	static ArrayList<DBNode> nodeAL2 = new ArrayList<DBNode>();
 	static boolean successful = false;
-	static String command = "";
+	static DBNode localNode = null;
 
+	static String command = "";
+	static int partition = -1;
+	static String table = "";
+	static String partitionCol = "";
+	static String partitionParam1 = "";
 	static int numnodes = -1;
+	static boolean ddl = false;
 
 	
 	/* Main method
@@ -57,7 +67,13 @@ public class Main {
 		String line = null;
 		String wordLeft = ""; // left side of catalog eqs
 		String wordRight = ""; // right side of catalog eqs
-
+		String[] tables = null;
+		DBNode catalogNode = new DBNode();
+		DBNode localNode = new DBNode();
+		
+		int nodeCount = 0;
+		boolean csv = false;
+		
 		FileReader fr;
 		BufferedReader br;
 
@@ -70,18 +86,130 @@ public class Main {
 			try {
 				fr = new FileReader(clustercfg);
 				br = new BufferedReader(fr);
+				int nodeNum = 1;
+				int temp = 0;
+				String nodeDriver = "";
+				String nodeHostName = "";
+				String nodeUserName = "";
+				String nodePassword = "";
+				String param1 = null;
+				String param2 = null;
 
 				while ((line = br.readLine()) != null) {
-					System.out.println(line);
+					//System.out.println(line);
+					
+					if(!table.equals("") && csv == false) {
+						csv = true;
+						tables = new String[] {table};
+					}
 
-					processCatalogLine(line);
+					if (numnodes == -1) {
+						processCatalogLine(line, catalogNode);
+					} else {
+						String[] parts = line.split("=");
+						//System.out.println(line);
+						//System.out.println(parts[0] + " = ");
+						//System.out.println(parts[1]);
+						
+						if(parts.length > 1) {
+							//System.out.println(parts[1]);
+							//System.out.println(temp);
+						}
+						
+						if(parts[0].equals("partition.node" + nodeNum +".param1")) {
+							param1 = parts[1];
+							temp++;
+						} else if(parts[0].equals("partition.node" + nodeNum +".param2")) {
+							param2 = parts[1];
+							temp++;
+						} else if(parts[0].equals("node" + nodeNum +".driver")) {
+							nodeDriver = parts[1];
+							temp++;
+						} else if(parts[0].equals("node" + nodeNum +".hostname")) {
+							nodeHostName = parts[1];
+							temp++;
+						} else if(parts[0].equals("node" + nodeNum +".username")) {
+							nodeUserName = parts[1];
+							temp++;
+						} else if(parts[0].equals("node" + nodeNum +".passwd")) {
+							nodePassword = parts[1];
+							temp++;
+						}
+						
+						if (temp == 2 && csv) {
+							DBNode newNode = new DBNode(null, null, null, null, param1, param2);
+							nodeAL1.add(newNode);
+							temp = 0;
+							nodeNum++;
+							param1 = null;
+							param2 = null;
+						} else if (temp == 4 && !csv) {
+							DBNode newNode = new DBNode(nodeDriver, nodeHostName, nodeUserName, nodePassword);
+							nodeAL1.add(newNode);
+							
+							/*
+							System.out.println("NODE " + (nodeCount + 1));
+							System.out.println("NodeDriver: " + nodeDriver);
+							System.out.println("NodeHostName: " + nodeHostName);
+							System.out.println("NodeUserName: " + nodeUserName);
+							System.out.println("NodePassword: " + nodePassword);
+							*/
+							nodeDriver = "";
+							nodeHostName = "";
+							nodeUserName = "";
+							nodePassword = "";
+							nodeNum++;
+							nodeCount++;
+							temp = 0;
+						}
+						//System.out.println(line);
+					}
+					
+					
+					
 				} // end of while
 				
-				// String tname = "";
-				
 				readSQL(sqlfile);
-				readCatalog(parseTname(sqlAL.get(0)));
-				doThread();
+				
+				if(!csv) {
+					tables = SqlParse.getTable(sqlAL.get(0));
+					ddl = SqlParse.isDDL(sqlAL.get(0));
+				}
+				
+				if(!ddl) {
+					System.out.println(tables);
+					readCatalog(tables, catalogNode);
+				}
+				//doThread();
+				
+				//cmd = SqlParse.getCmd(sqlAL.get(0));
+				
+				if (csv) {
+					ArrayList<String[]> csvData = null;
+					CsvReader csvRead = new CsvReader();
+					
+					csvData = csvRead.readCSV(sqlfile);
+					System.out.println("CSV");
+					cleanNodeAL();
+					successful = runCSV(csvData);
+					
+					if (successful) {
+						//(DBNode catalog, ArrayList<DBNode> nodeAL, int partition, String table, String partitionCol)
+						CsvReader.updateCatalog(catalogNode, nodeAL1, partition, table, partitionCol);
+					} else {
+						System.out.println("Error during sql query, Catalog not updated");
+					}
+				} else {
+					doThread();
+					//System.out.println("SQL");
+				}
+				
+				
+				//Sql.runJoin(nodeAL1.get(0), nodeAL2.get(0), "asdf");
+
+				if (successful && ddl) {
+					CatalogFunc.updateCatalogDDL(catalogNode, nodeAL1, sqlAL);
+				}
 
 			} catch (IOException e) {
 				System.out.println("File not found");
@@ -104,40 +232,50 @@ public class Main {
 	 * 
 	 * Returns: void
 	*/
-	private static void processCatalogLine(String line) {
+	private static void processCatalogLine(String line, DBNode catalogNode) {
 
 		String wordLeft = ""; // left side of catalog eqs
-
+		String[] words = line.split("=");
+		String temp = "";
+		
 		/*
 		 * switch for scanning catalogs. -1 = nothing 0 = driver, 1=hostname,
 		 * 2=username, 3=passwd
 		 *
 		 */
 		int catalog = -1;
-
-		for (int x = 0; x < line.length(); x++) {
-			// System.out.print(line.charAt(x));
-			// catalog = compare(wordLeft);
-
-			if (catalog == -1) {
-				wordLeft = wordLeft + line.charAt(x);
-				catalog = catalogCompare(wordLeft);
-			} else if (catalog == 0) {
-				catalogDriver = catalogDriver + line.charAt(x);
-			} else if (catalog == 1) {
-				catalogHostName = catalogHostName + line.charAt(x);
-			} else if (catalog == 2) {
-				catalogUserName = catalogUserName + line.charAt(x);
-			} else if (catalog == 3) {
-				catalogPassword = catalogPassword + line.charAt(x);
-			} else if (catalog == 4) {
-				// numnodes = (int) line.substring(x);
-
-				numnodes = Integer.parseInt(line.substring(x));
-
+		
+		catalog = catalogCompare(words[0] + "=");
+		
+		if (catalog == 0) {
+			catalogNode.setDriver(words[1]);
+			//catalogNode.setDriver(catalogNode.getDriver() + line.charAt(x));
+		} else if (catalog == 1) {
+			catalogNode.setHostname(words[1]);
+		} else if (catalog == 2) {
+			catalogNode.setUsername(words[1]);
+		} else if (catalog == 3) {
+			catalogNode.setPassword(words[1]);
+		} else if (catalog == 4) {
+			numnodes = Integer.parseInt(words[1]);
+		} else if (catalog == 5) {
+			table = words[1];
+		} else if (catalog == 6) {
+			//partition = partition + line.charAt(x);
+			temp = words[1];
+			
+			if(temp.equals("range")) {
+				partition = 1;
+			} else if (temp.equals("hash")) {
+				partition = 2;
+			} else {
+				partition = 0;
 			}
-
-		}
+		} else if (catalog == 7) {
+			partitionCol = words[1];
+		} else if (catalog == 8) {
+			partitionParam1 = words[1];
+		} 
 
 	} // end of method
 
@@ -166,7 +304,16 @@ public class Main {
 			ret = 3;
 		} else if (line.equals("numnodes=")) {
 			ret = 4;
+		} else if (line.equals("tablename=")) {
+			ret = 5;
+		} else if (line.equals("partition.method=")) {
+			ret = 6;
+		} else if (line.equals("partition.column=")) {
+			ret = 7;
+		} else if (line.equals("partition.param1=")) {
+			ret = 8;
 		}
+
 
 		return (ret);
 	}
@@ -211,114 +358,6 @@ public class Main {
 
 		// return(sql);
 	}
-
-	/* Function runDDL
-	 * Parameter: (String) JDBC_DRIVER : driver for the database node
-	 * 				(String) DB_URL : url/hostname for the database node
-	 * 				(String) USER : username for the database node
-	 * 				(String) PASS : password for the database node
-	 * 				(String) sql : sql to be executed
-	 * 
-	 * Description: attempts to establish a datbase connection and run a
-	 * 				sql query. Will close connection after query is completed
-	 * 
-	 * Returns: void
-	*/
-	private static void runSQL(String JDBC_DRIVER, String DB_URL, String USER, String PASS, String sql) {
-
-		Connection conn = null;
-		Statement stmt = null;
-		int column = 0;
-		String val = "";
-		
-		try {
-			// STEP 2: Register JDBC driver
-			System.out.println("Loading driver...");
-			Class.forName(JDBC_DRIVER);
-
-			// STEP 3: Open a connection
-			System.out.println("Connecting to database...");
-
-			if (USER.equals(" ") && PASS.equals(" ")) {
-				conn = DriverManager.getConnection(DB_URL);
-			} else {
-				conn = DriverManager.getConnection(DB_URL, USER, PASS);
-			}
-			
-			// STEP 4: Execute a query
-			System.out.println("Creating statement...");
-			stmt = conn.createStatement();
-
-			ResultSet rs = null;
-			
-			try {
-				rs = stmt.executeQuery(sql);
-			} catch (SQLException se) {
-				stmt.executeUpdate(sql);
-			} finally {
-				
-			}
-			
-			//stmt.executeUpdate(sql); //for ddl commands
-			//stmt.executeQuery(sql); //for insert and what not
-			
-			if (rs != null) {
-				// STEP 5: Extract data from result set
-				ResultSetMetaData rsmd = rs.getMetaData();
-				column = rsmd.getColumnCount();
-				while(rs.next()){
-					
-					/*
-					for (int i = 1; i <= column; i++) {
-						System.out.print(rsmd.getColumnName(i));
-					}
-					*/
-					
-					
-					for (int i = 1; i <= column; i++) {
-						if (i > 1) {
-							System.out.print(", ");
-						}
-						val = rs.getString(i);
-						System.out.print(val);
-					}
-					System.out.println();
-	
-			      }
-				rs.close();
-			}
-
-			System.out.println("[" + DB_URL.substring(0, (DB_URL.length() - 1)) + "]: sql success");
-			successful = true;
-
-			stmt.close();
-			conn.close();
-		} catch (SQLException se) {
-			// Handle errors for JDBC
-			// se.printStackTrace();
-			System.out.println("[" + DB_URL + "]: sql failed");
-		} catch (Exception e) {
-			// Handle errors for Class.forName
-			// e.printStackTrace();
-			System.out.println("[" + DB_URL + "]: sql failed");
-		} finally {
-			// finally block used to close resources
-			try {
-				if (stmt != null)
-					stmt.close();
-			} catch (SQLException se2) {
-			} // nothing we can do
-			try {
-				if (conn != null)
-					conn.close();
-			} catch (SQLException se) {
-				se.printStackTrace();
-			} // end finally try
-		} // end try
-			// System.out.println("Goodbye!");
-
-	}
-
 	
 	/* Function readCatalog
 	 * Parameter: none
@@ -329,101 +368,125 @@ public class Main {
 	 * 
 	 * Returns: void
 	*/
-	private static void readCatalog(String table) {
-		// runDDL(String JDBC_DRIVER, String DB_URL, String USER, String PASS,
-		// String sql)
-
-		//System.out.println(sqlAL.get(0));
-
-		/*
-		 * static String catalogDriver = ""; static String catalogHostName = "";
-		 * static String catalogUserName = ""; static String catalogPassword =
-		 * "";
-		 */
+	private static void readCatalog(String[] tables, DBNode catalogNode) {
 		Connection conn = null;
 		Statement stmt = null;
+		ResultSet rs = null;
 		String sql = "";
-		
-		//SELECT * FROM dtables WHERE tname ='' ORDER BY nodeid 
-		
-		String tname = "";
-		String cmd = "";
 		
 		String nodeDriver = "";
 		String nodeHostName = "";
 		String nodeUserName = "";
 		String nodePassword = "";
+		String tname = "";
+		int part= 0;
 		
 		if(numnodes == -1) {
 			numnodes = 0;
 		}
 		
-
 		try {
 			// STEP 2: Register JDBC driver
-			Class.forName(catalogDriver);
-
+			Class.forName(catalogNode.getDriver());
+			
 			// STEP 3: Open a connection
-			if (catalogUserName.equals(" ") && catalogPassword.equals(" ")) {
-				conn = DriverManager.getConnection(catalogHostName);
+			if (catalogNode.getUsername().equals(" ") && catalogNode.getPassword().equals(" ")) {
+				conn = DriverManager.getConnection(catalogNode.getHostname());
 			} else {
-				conn = DriverManager.getConnection(catalogHostName, catalogUserName, catalogPassword);
+				conn = DriverManager.getConnection(catalogNode.getHostname(), catalogNode.getUsername(), catalogNode.getPassword());
 			}
 			
+
 			// STEP 4: Execute a query
 			stmt = conn.createStatement();
 
-			
-			sql = "SELECT * FROM dtables WHERE tname='" + table+ "' ORDER BY nodeid ";
-			//"SELECT * FROM dtables WHERE tname=??? ORDER BY nodeid"
-			System.out.println(sql);
-			
-			// STEP 5: Extract data from result set
-			ResultSet rs = stmt.executeQuery(sql);
-			
-			System.out.println("Query executed");
-			
-			// STEP 5: Extract data from result set
-			while (rs.next()) {
-				
-				// Retrieve by column name
-				
-				nodeDriver = rs.getString("nodedriver");
-				nodeHostName = rs.getString("nodeurl");
-				nodeUserName = rs.getString("nodeuser");
-				nodePassword = rs.getString("nodepasswd");
-				
-				nodeDriver = nodeDriver.trim().replaceAll(" +", "");
-				nodeHostName = nodeHostName.trim().replaceAll(" +", "");
-				nodeUserName = nodeUserName.trim().replaceAll(" +", "");
-				nodePassword = nodePassword.trim().replaceAll(" +", "");
-				
-				if(nodeUserName.equals("")) {
-					nodeUserName = " ";
+			for(int i = 0;i < tables.length;i++) {
+				if(tables[i] == null) {
+					break;
 				}
-				if(nodePassword.equals("")) {
-					nodePassword = " ";
-				}	
 				
-				// Display values
-				/*
-				System.out.print("Driver: " + nodeDriver);
-				System.out.print(", URL: " + nodeHostName);
-				System.out.print(", User: " + nodeUserName);
-				System.out.println(", Pass: " + nodePassword);
-				*/
+				sql = "SELECT * FROM dtables WHERE tname='" + tables[i]+ "' ORDER BY nodeid ";
+				//"SELECT * FROM dtables WHERE tname=??? ORDER BY nodeid"
+				//System.out.println(sql);
 				
-				DBNode newNode = new DBNode(nodeDriver, nodeHostName, nodeUserName, nodePassword);
-				numnodes++;
-
-				nodeAL.add(newNode);
+				// STEP 5: Extract data from result set
+				rs = stmt.executeQuery(sql);
 				
-			}
+				System.out.println("Catalog read");
+				
+				numnodes = 0;
+				// STEP 5: Extract data from result set
+				while (rs.next()) {
+					
+					// Retrieve by column name
+					nodeDriver = rs.getString("nodedriver");
+					nodeHostName = rs.getString("nodeurl");
+					nodeUserName = rs.getString("nodeuser");
+					nodePassword = rs.getString("nodepasswd");
+					tname = rs.getString("tname");
+					part = rs.getInt("partmtd");
+					
+					nodeDriver = nodeDriver.trim().replaceAll(" +", "");
+					nodeHostName = nodeHostName.trim().replaceAll(" +", "");
+					nodeUserName = nodeUserName.trim().replaceAll(" +", "");
+					nodePassword = nodePassword.trim().replaceAll(" +", "");
+					tname = tname.trim().replaceAll(" +", "");
+					
+					if(nodeUserName.equals("")) {
+						nodeUserName = " ";
+					}
+					if(nodePassword.equals("")) {
+						nodePassword = " ";
+					}	
+					
+					// Display values
+					
+					/*
+					System.out.println("Driver: " + nodeDriver);
+					System.out.println("URL: " + nodeHostName);
+					System.out.println("User: " + nodeUserName);
+					System.out.println("Pass: " + nodePassword);
+					System.out.println("tname: " + tname);
+					System.out.println("partmtd: " + part);
+					*/
+					
+					//DBNode newNode = new DBNode(nodeDriver, nodeHostName, nodeUserName, nodePassword);
+					//newNode.setTable(tname);
+					//newNode.setPartitionMethod(part);
+					//numnodes++;
+					
+					if (nodeAL1.size() <= numnodes) {
+						
+						DBNode newNode = new DBNode(nodeDriver, nodeHostName, nodeUserName, nodePassword);
+						newNode.setTable(tname);
+						newNode.setPartitionMethod(part);
+						
+						if(i == 0) {
+							nodeAL1.add(newNode);
+							System.out.println("added Node");
+						} else if (i == 1) {
+							nodeAL2.add(newNode);
+							System.out.println("added Node");
+						} else {
+							System.out.println("ERROR! MORE THAN TWO TABLE!");
+						}
+					} else {
+						nodeAL1.get(numnodes).setDriver(nodeDriver);
+						nodeAL1.get(numnodes).setHostname(nodeHostName);
+						nodeAL1.get(numnodes).setUsername(nodeUserName);
+						nodeAL1.get(numnodes).setPassword(nodePassword);
+					}
+					
+					numnodes++;
+					
+					
+					
+				} //end of while loop
+			} // end of for loop
 			// STEP 6: Clean-up environment
 			 
 			 // Display values //System.out.print("ID: " + id);
 			 //System.out.println(", name: " + name); }
-
 			rs.close();
 			stmt.close();
 			conn.close();
@@ -432,12 +495,12 @@ public class Main {
 			// Handle errors for JDBC
 			// se.printStackTrace();
 			System.out.println(
-					"[" + catalogHostName.substring(0, (catalogHostName.length() - 1)) + "]: catalog read failed");
+					"[" + catalogNode.getHostname().substring(0, catalogNode.getHostname().length()) + "]: catalog read failed");
 		} catch (Exception e) {
 			// Handle errors for Class.forName
 			// e.printStackTrace();
 			System.out.println(
-					"[" + catalogHostName.substring(0, (catalogHostName.length() - 1)) + "]: catalog read failed");
+					"[" + catalogNode.getHostname().substring(0, catalogNode.getHostname().length()) + "]: catalog read failed");
 		} finally {
 			// finally block used to close resources
 			try {
@@ -456,78 +519,305 @@ public class Main {
 
 	}
 	
-	/* Function parseTname
-	 * Parameter: (String) sql : sql query to extract information from
+	/* Function cleanNodeAL
+	 * Parameter: none
 	 * 
-	 * Description: gets the table name in query
+	 * Description: Removes nodes in nodeAL that has no driver info. This is
+	 * 				to weed out nodes that has incomplete information.
 	 * 
-	 * Returns: (String) : The table name
+	 * Returns: void
 	*/
-	private static String parseTname(String sql) {
-		String ret = "";
-		// String[] ret = str.split("name |field |grade ");
-
-		char ch;
-		String word = "";
-		int control = 0;
-
-		for (int x = 0; x < sql.length(); x++) {
-			ch = sql.charAt(x);
-			// word = word + ch;
-
-			if (control == 1) {
-				if (ch == '(' || ch == ' ') {
-					control++;
-				} else {
-					ret = ret + ch;
-				}
-			} else if (control == 0 && word.equalsIgnoreCase("TABLE")) {
-				control++;
-			} else if (control == 0 && word.equalsIgnoreCase("FROM")) {
-				control++;
-			} else if (control == 0 && word.equalsIgnoreCase("INTO")) {
-				control++;	
-			} else if (control == 0 && word.equalsIgnoreCase("UPDATE")) {
-				control++;
-			} else if (ch == ' ') {
-				word = "";
-			} else {
-				word = word + ch;
+	private static void cleanNodeAL() {
+		
+		for(int x = 0; x < nodeAL1.size();x++) {
+			if(nodeAL1.get(x).getDriver() == null) {
+				nodeAL1.remove(x);
+				x--;
 			}
 		}
-		System.out.println(ret);
-		return (ret);
+		for(int x = 0; x < nodeAL2.size();x++) {
+			if(nodeAL2.get(x).getDriver() == null) {
+				nodeAL2.remove(x);
+				x--;
+			}
+		}
 	}
-
 	
-	/* Function getCmd
-	 * Parameter: (String) sql : sql query to extract information from
+	/* Function runCSV
 	 * 
-	 * Description: gets the ddl command from a sql query.
+	 * Parameter: (ArrayList<String[]>) ArrayList containing csvdata
 	 * 
-	 * Returns: (String) : The ddl command of the sql in regards to table, 
-	 * 						such as create or drop.
+	 * Description: Takes an arrayList and depending on the partition memthod,
+	 * 				calls on one of the runCSVx methods
+	 * 
+	 * Returns: (boolean) success: if true, CSV data is successfully written to nodes
 	*/
-	public static String getCmd(String sql) {
-		String ret = "";
+	private static boolean runCSV(ArrayList<String[]> csvData) {
+		boolean success = false;
+		
+		if (partition == 1) { //range
+			runCSVRange(csvData);
+			success = true;
+		} else if (partition == 2){ //hash
+			runCSVHash(csvData);
+			success = true;
+		} else {
+			runCSVnoPartition(csvData);
+			success = true;
+		}
+			
+		
+		return(success);
+	}
+	
+	
+	/* Function runCSVnoPartition
+	 * 
+	 * Parameter: (ArrayList<String[]>) ArrayList containing csvdata
+	 * 
+	 * Description: Takes csvdata and writes to everysingle database node
+	 * 
+	 * Returns: void
+	*/
+	private static void runCSVnoPartition(ArrayList<String[]> csvData) {
+		//ResultSetMetaData metaData = getMetaData();
 
-		char ch;
-		String word = "";
+		int column = getMetaData();
+		String sql = "";
+		
+		System.out.println(column);
+		
+		for (int x = 0; x < csvData.size();x++) {
+			
+			sql = csvSQL(csvData.get(x));
+			//System.out.println(sql);
+			
+			for(int y = 0; y < nodeAL1.size();y++) {
+				SqlFunc.runSQL(nodeAL1.get(y).getDriver(), nodeAL1.get(y).getHostname(), nodeAL1.get(y).getUsername(), nodeAL1.get(y).getPassword(), sql);
+			} 
+		}
+			
+	}
+	
+	
+	/* Function runCSVRange
+	 * 
+	 * Parameter: (ArrayList<String[]>) ArrayList containing csvdata
+	 * 
+	 * Description: Takes csvdata and writes to database nodes that
+	 * 				fits the range.
+	 * 
+	 * Returns: void
+	*/
+	private static void runCSVRange(ArrayList<String[]> csvData) {
+		//ResultSetMetaData metaData = getMetaData();
 
-		for (int x = 0; x < sql.length(); x++) {
-			ch = sql.charAt(x);
-			// word = word + ch;
+		int column = getMetaData();
+		String sql = "";
+		
+		System.out.println(column);
+		
+		for (int x = 0; x < csvData.size();x++) {
+			
+			sql = csvSQL(csvData.get(x));
+			//System.out.println(sql);
+			
+			
+			for(int y = 0; y < nodeAL1.size();y++) {
+				int colval = Integer.parseInt(csvData.get(x)[column]);
+					
+				if (nodeAL1.get(y).getPartitionParam1().equals("-inf")) {
+						
+					if (nodeAL1.get(y).getPartitionParam2().equals("+inf")) {
+						SqlFunc.runSQL(nodeAL1.get(y).getDriver(), nodeAL1.get(y).getHostname(), nodeAL1.get(y).getUsername(), nodeAL1.get(y).getPassword(), sql);
+					} else if(colval <= Integer.parseInt(nodeAL1.get(y).getPartitionParam2())) {
+						SqlFunc.runSQL(nodeAL1.get(y).getDriver(), nodeAL1.get(y).getHostname(), nodeAL1.get(y).getUsername(), nodeAL1.get(y).getPassword(), sql);
+					}
+				} else if (nodeAL1.get(y).getPartitionParam2().equals("+inf")) {
+					if (Integer.parseInt(nodeAL1.get(y).getPartitionParam1()) < colval) {
+						SqlFunc.runSQL(nodeAL1.get(y).getDriver(), nodeAL1.get(y).getHostname(), nodeAL1.get(y).getUsername(), nodeAL1.get(y).getPassword(), sql);
+					}
+				} else {
+					int p1 = Integer.parseInt(nodeAL1.get(y).getPartitionParam1());
+					int p2 =  Integer.parseInt(nodeAL1.get(y).getPartitionParam2());
+						
+					if(p1 < colval && colval <= p2) {
+						SqlFunc.runSQL(nodeAL1.get(y).getDriver(), nodeAL1.get(y).getHostname(), nodeAL1.get(y).getUsername(), nodeAL1.get(y).getPassword(), sql);
+					}
+						
+				}
+					
+			} 
+		}
+			
+	}
+			
+		
+		
+	/* Function runCSVHash
+	 * 
+	 * Parameter: (ArrayList<String[]>) ArrayList containing csvdata
+	 * 
+	 * Description: Takes csvdata and writes to database nodes based
+	 * 				on the hashing alhorithm.
+	 * 
+	 * NOTE: Because of how I implemented this program, there is no need
+	 * to add 1 for the hash value
+	 * 
+	 * Returns: void
+	*/
+	private static void runCSVHash(ArrayList<String[]> csvData) {
+		//ResultSetMetaData metaData = getMetaData();
 
-			if (ch == ' ') {
-				x = sql.length() + 1;
-			} else {
-				word = word + ch;
-			}
+		int column = getMetaData();
+		int p1 = 0;
+		int i = 0;
+		String sql = "";
+			
+		String dr = "";
+		String hn = "";
+		String un = "";
+		String pw = "";
+			
+		System.out.println(column);
+			
+		for (int x = 0; x < csvData.size();x++) {
+				
+			sql = csvSQL(csvData.get(x));
+			p1 = Integer.parseInt(csvData.get(x)[column]);
+			i = ( p1 % nodeAL1.size());
+				
+			dr = nodeAL1.get(i).getDriver();
+			hn = nodeAL1.get(i).getHostname();
+			un = nodeAL1.get(i).getUsername();
+			pw = nodeAL1.get(i).getPassword();
+				
+			SqlFunc.runSQL(dr, hn, un, pw, sql);
+				
 		}
 
-		ret = word;
+	}
+	
+	/* Function csvSQL
+	 * Parameter: (String[]) csvData : Array that holds csvdata
+	 * 
+	 * Description: Takes a string array and outputs an sql that will
+	 * 				write the csv data if executed
+	 * 
+	 * Returns: (String) data : sql query to write into db nodes
+	*/
+	private static String csvSQL(String[] csvData) {
+		String sql = "INSERT INTO " + table + " VALUES (";
+		String data = "";
+		
+		for (int x = 0; x < csvData.length; x++) {
+			data = csvData[x];
+			
+			if (data.charAt(0) == '"' && data.charAt(data.length() - 1) == '"') { //replaces double quote with single quote
+				data = "'" + data.substring(1, data.length() -1)  + "'";
+			}
+			
+			if(x > 0) {
+				sql = sql + ",";
+			}
+			
+			sql = sql + data;
+		}
+		sql = sql + ")";
+		
+		return(sql);
+	}
+	
+	/* Function getMetaData
+	 * Parameter: none
+	 * 
+	 * Description: attempts to return the index of the partition column
+	 * 
+	 * Returns: (int) ret: The column of the partition
+	*/
+	private static int getMetaData() {
+		ResultSetMetaData rsmd = null;
+		int ret = -1;
+		
+		String JDBC_DRIVER = nodeAL1.get(0).getDriver();
+		String DB_URL = nodeAL1.get(0).getHostname();
+		String USER = nodeAL1.get(0).getUsername();
+		String PASS = nodeAL1.get(0).getPassword();
+		Connection conn = null;
+		Statement stmt = null;
+		int column = -1;
+		String val = "";
+		String sql = "SELECT * FROM " + table;
+		
+		try {
+			// STEP 2: Register JDBC driver
+			Class.forName(JDBC_DRIVER);
 
-		return (ret);
+			// STEP 3: Open a connection
+
+			if (USER.equals(" ") && PASS.equals(" ")) {
+				conn = DriverManager.getConnection(DB_URL);
+			} else {
+				conn = DriverManager.getConnection(DB_URL, USER, PASS);
+			}
+			
+			// STEP 4: Execute a query
+			stmt = conn.createStatement();
+
+			ResultSet rs = null;
+			
+			rs = stmt.executeQuery(sql);
+			
+			if (rs != null) {
+				rsmd = rs.getMetaData();
+				
+				
+				for (int x = 1; x <= rsmd.getColumnCount();x++) {
+					if (partitionCol.equalsIgnoreCase(rsmd.getColumnLabel(x))){
+						ret = x - 1;
+					}
+					
+					//System.out.println(rsmd.getColumnTypeName(x));
+					//System.out.println(rsmd.getColumnLabel(x));
+				}
+				
+				
+				rs.close();
+			}
+
+			//System.out.println("[" + DB_URL.substring(0, (DB_URL.length() - 1)) + "]: sql success");
+
+			stmt.close();
+			conn.close();
+			
+		} catch (SQLException se) {
+			// Handle errors for JDBC
+			// se.printStackTrace();
+			System.out.println("[" + DB_URL + "]: sql metadata failed");
+		} catch (Exception e) {
+			// Handle errors for Class.forName
+			// e.printStackTrace();
+			System.out.println("[" + DB_URL + "]: sql metadata failed");
+		} finally {
+			// finally block used to close resources
+			try {
+				if (stmt != null)
+					stmt.close();
+			} catch (SQLException se2) {
+			} // nothing we can do
+			try {
+				if (conn != null)
+					conn.close();
+			} catch (SQLException se) {
+				se.printStackTrace();
+			} // end finally try
+		} // end try
+			// System.out.println("Goodbye!");
+
+		
+		
+		
+		return(ret);
 	}
 
 	/* Function doThread
@@ -542,31 +832,32 @@ public class Main {
 		long startTime = System.currentTimeMillis();
 		// int nthreads=2;
 		int nthreads = numnodes;
-		Thread[] tList;
-
-		tList = new Thread[nthreads];
-		String driver = null;
-		String host = null;
-		String user = null;
-		String pass = null;
+		Thread[] tList = new Thread[nodeAL1.size()];
+		DBNode node1 = null;
+		DBNode node2 = null;
 
 		// for (int i = 0; i < nthreads; i++) {
-		//System.out.println(nodeAL.size());
-		for (int i = 0; (i < nthreads) && (i < nodeAL.size()); i++) {
-			driver = (nodeAL.get(i)).getDriver();
-			host = (nodeAL.get(i)).getHostName();
-			user = (nodeAL.get(i)).getUserName();
-			pass = (nodeAL.get(i)).getPassword();
-			// tList[i]= new Thread( new MessageLoop() );
-			// System.out.println("HN is: " + host + i);
-			tList[i] = new Thread(new MessageLoop(driver, host, user, pass));
-			tList[i].start();
+		for (int i = 0; i < nodeAL1.size(); i++) {
+			node1 = nodeAL1.get(i);
+			
+			if(nodeAL2.size() > 0) {
+				for(int j = 0; j < nodeAL2.size(); j++) {
+					node2 = nodeAL2.get(j);
+					tList[i] = new Thread(new ThreadSQL(node1, node2));
+					tList[i].start();
+				}
+			} else {
+				tList[i] = new Thread(new ThreadSQL(node1, null));
+				tList[i].start();
+			}
+			node1 = null;
+			node2 = null;
 		}
 
 		threadMessage("Waiting for all MessageLoop threads to finish");
 
 		// for (int i = 0; i < nthreads; i++) {
-		for (int i = 0; (i < nthreads) && (i < nodeAL.size()); i++) {
+		for (int i = 0; (i < nthreads) && (i < nodeAL1.size()); i++) {
 			tList[i].join();
 		}
 
@@ -580,38 +871,44 @@ public class Main {
 		System.out.format("%s: %s%n", threadName, message);
 	}
 	
-	private static class MessageLoop implements Runnable {
+	private static class ThreadSQL implements Runnable {
 
-		private String JDBC_DRIVER;
-		private String DB_URL;
-		private String USER;
-		private String PASS;
+		private DBNode node1 = null;
+		private DBNode node2 = null;
 
-		MessageLoop(String driver, String url, String user, String pass) {
-			JDBC_DRIVER = driver;
-			DB_URL = url;
-			USER = user;
-			PASS = pass;
-
-			// System.out.println("in constructor, param is" + url);
-			// System.out.println("in constructor, hn is" + DB_URL);
+		ThreadSQL(DBNode n1, DBNode n2) {
+			node1 = n1;
+			node2 = n2;
 		}
 
 		public void run() {
 			try {
+				boolean tempBol = false;
 				// int threadnum = (int) threadName;
 				// System.out.println("Driver: " + JDBC_DRIVER);
 				// System.out.println("hostname: " + DB_URL);
 				// System.out.println("username: " + USER);
 				// System.out.println("passord: " + PASS);
-
+				
+				
 				for (int i = 0; i < sqlAL.size(); i++) {
 					// Pause for 4 seconds
-					Thread.sleep(4000);
+					Thread.sleep(5000);
 					// Print a message
 					threadMessage(sqlAL.get(i));
-					runSQL(JDBC_DRIVER, DB_URL, USER, PASS, sqlAL.get(i));
-
+					
+					
+					if(ddl) {
+						tempBol = SqlFunc.runDDL(node1.getDriver(), node1.getHostname(), node1.getUsername(), node1.getPassword(), sqlAL.get(i));
+						
+						if(successful == false && tempBol == true) {
+							successful = true;
+						}
+					} else if(node2 == null) {
+						SqlFunc.runSQL(node1.getDriver(), node1.getHostname(), node1.getUsername(), node1.getPassword(), sqlAL.get(i));
+					} else {
+						SqlFunc.runJoin(node1, node2, sqlAL.get(i));
+					}
 				}
 			} catch (InterruptedException e) {
 				threadMessage("I wasn't done!");
