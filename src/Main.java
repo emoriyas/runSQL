@@ -713,7 +713,9 @@ public class Main {
 		for (int x = 0; x < csvData.length; x++) {
 			data = csvData[x];
 			
-			if (data.charAt(0) == '"' && data.charAt(data.length() - 1) == '"') { //replaces double quote with single quote
+			if(data.equals("\"\"")) {
+				data = null;
+			} else if (data.charAt(0) == '"' && data.charAt(data.length() - 1) == '"') { //replaces double quote with single quote
 				data = "'" + data.substring(1, data.length() -1)  + "'";
 			}
 			
@@ -724,6 +726,8 @@ public class Main {
 			sql = sql + data;
 		}
 		sql = sql + ")";
+		
+		//System.out.println(sql);
 		
 		return(sql);
 	}
@@ -739,10 +743,12 @@ public class Main {
 		ResultSetMetaData rsmd = null;
 		int ret = -1;
 		
+		
 		String JDBC_DRIVER = nodeAL1.get(0).getDriver();
 		String DB_URL = nodeAL1.get(0).getHostname();
 		String USER = nodeAL1.get(0).getUsername();
 		String PASS = nodeAL1.get(0).getPassword();
+		
 		Connection conn = null;
 		Statement stmt = null;
 		int column = -1;
